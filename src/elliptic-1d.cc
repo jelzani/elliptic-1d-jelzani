@@ -3,6 +3,7 @@
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
+
 #include<iostream>
 #include<dune/common/parallel/mpihelper.hh> // An initializer of MPI
 #include<dune/common/fvector.hh>
@@ -15,16 +16,29 @@
 #include<dune/grid/onedgrid.hh>
 #include<dune/grid/io/file/vtk.hh>
 
-double f(double x) {return std::sin(2*M_PI*x);}
+// Primjer s weba
+/*
+double a(double x) {return 1+x*x;}
+double f(double x) {return M_PI*M_PI*a(x)*sin(M_PI*x)-2*M_PI*x*cos(M_PI*x);}
+double egz_rj(double x) {return sin(M_PI*x);}
+const double g0=0.0, g1=0.0;    //lijevi i desni uvjet
+// Rezultat: norma reziduala = 6.5e-15, norma greške = 1.534e-5
+*/
+
+// Moj primjer
+double a(double x) {return 22*x+8;}
+double f(double x) {return -(22*(2*x-M_PI*cos(M_PI*x))+a(x)*(2+M_PI*M_PI*sin(M_PI*x)));}
+double egz_rj(double x) {return x*x-sin(M_PI*x);}
+const double g0=0.0, g1=1.0;    //lijevi i desni uvjet
+// Rezultat: norma reziduala = 6.8367e-14, norma greške = 1.7545e-5
 
 int main(int argc, char** argv)
 {
     Dune::MPIHelper::instance(argc, argv);
 
-    const double L=1.0; //(0,1) - promatramo jdbu na (0,1)
-    const double g0=0.0, g1=2.0; //desni i lijevi uvjet se ne mijenjaju :D
-    const int N=1000; //broj elemenata u mreži; x_0=0,...x_N=L
-    const double h=L/N; //prostorni korak
+    const double L=1.0;             //(0,1) - promatramo jdbu na intervalu (0,1)
+    const int N=1000;               //broj elemenata u mreži; x_0=0,...x_N=L
+    const double h=L/N;             //prostorni korak
 
     using Vector=Dune::BlockVector<double>; //Dune::BlockVector<Dune::FieldVector<double,1>>
     using Matrix=Dune::BCRSMatrix<double>; //<Dune::FieldMatrix<double,1,1>>;
@@ -33,10 +47,10 @@ int main(int argc, char** argv)
     Matrix A;
 
     F[0]=g0; F[N]=g1;
-    for(int i=1;i<N;++i) F[i]=h*h*f(i*h); //x_i=i*h
-    for(int i=0;i<=N;++i) U[i]=0.0; //nije nužno - ovisi o Solveru
+    for(int i=1;i<N;++i) F[i]=h*h*f(i*h);   //x_i=i*h
+    for(int i=0;i<=N;++i) U[i]=0.0;         //nije nužno - ovisi o solveru
 
-    //profil matrice____________________________
+    //Profil matrice____________________________
 
     //odredimo koliko memorije treba alocirati
     A.setSize(N+1,N+1);
@@ -46,7 +60,7 @@ int main(int argc, char** argv)
     for(int i=1;i<N;++i) A.setrowsize(i,3);
     A.endrowsizes();
 
-    //gdje su elementi?
+    //kažemo mu gdje su elementi
     A.addindex(0,0);
     A.addindex(N,N);
     for(int i=1;i<N;++i){
@@ -55,23 +69,23 @@ int main(int argc, char** argv)
         A.addindex(i,i+1);
     }
     A.endindices();
-    //__________________________________________
 
-    //punimo matricu
+    //Punimo matricu_____________________________
     A[0][0]=1.0; A[N][N]=1.0;
     for(int i=1;i<N;++i){
-        A[i][i]=2;
-        A[i][i-1]=-1;
-        A[i][i+1]=-1;
+        auto a_l=a(0.5*h*(2*i-1)), a_d=a(0.5*h*(2*i+1));
+        A[i][i]=a_l+a_d;
+        A[i][i-1]=-a_l;
+        A[i][i+1]=-a_d;
     }
 
-    //sad selektiramo Solver
+    //Selektiramo solver_________________________
     Dune::MatrixAdapter<Matrix,Vector,Vector> op(A);
     Dune::SeqILU<Matrix,Vector,Vector> ilu(A,0,0.92);
     Dune::BiCGSTABSolver<Vector> solver(op,ilu,1E-12,300,5);
     Dune::InverseOperatorResult r;
 
-    Vector FF=F; //apply ponekad prebriše F
+    Vector FF=F; //apply ponekad prebriše F, pa radimo rezervu
     solver.apply(U,F,r);
 
     if(r.converged){
@@ -88,7 +102,7 @@ int main(int argc, char** argv)
 
     Vector Error(N+1);
     for(int i=0;i<=N;++i)
-        Error[i]=U[i]-(2*i*h+sin(2*M_PI*i*h)/(4*M_PI*M_PI)); //2x+sin(2pix)/4pi^2
+        Error[i]=U[i]-egz_rj(i*h);
 
     std::cout<<"Norma greške = "<<Error.two_norm()<<"\n";
 
@@ -100,14 +114,6 @@ int main(int argc, char** argv)
 
     return 0;
 }
-
-
-
-
-
-
-
-
 
 
 
